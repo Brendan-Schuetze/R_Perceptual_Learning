@@ -26,6 +26,33 @@
         margin: 0 auto;
     }
     
+    .trash {
+        border: 2px dashed #f0b4b4;
+        border-radius: 10px;
+        padding: 10px;
+        min-height: 50px;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        background: #fff6f6;
+        justify-content: flex-start; /* tokens align left when present */
+
+    }
+
+    .trash-placeholder {
+        color: #9a4a4a;
+        font-size: 13px;
+        user-select: none;
+        padding: 6px 8px;
+        border-radius: 8px;
+        background: rgba(240, 180, 180, 0.25);
+    }
+    
+    .trash.empty {
+        justify-content: center;     /* placeholder centered when empty */
+    }
+
     .sortable {
       border: 2px dashed #bbb; border-radius: 10px; padding: 10px; min-height: 60px;
       display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
@@ -79,7 +106,10 @@
     <h2 class="prompt" id="prompt"></h2>
     <p class="small">Drag tokens to reorder them. Goal: form a correct single line of R code.</p>
     <div class="sortable" id="answer"></div>
-
+    <br>
+    <div class="trash empty" id="trash">
+        <div class="trash-placeholder" id="trashPlaceholder">🗑️ (unneeded tokens go here)</div>
+    </div>
     <pre class="codeLine"><code id="assembled" class="language-r hljs">(loading...)</code></pre>
 
     <div class="controls">
@@ -247,6 +277,9 @@ function updatePreview() {
     codeEl.innerHTML = renderTokens(tokens);
   }
 
+    updateTrashPlaceholder();  // update trash placeholder visibility
+
+
   clearFeedback();
 }
 
@@ -318,45 +351,79 @@ function updatePreview() {
     }
 
     function showAnswer() {
-      const problem = PROBLEMS[currentIndex];
-      const sol = problem.accepted[0];
+    const problem = PROBLEMS[currentIndex];
+    const sol = problem.accepted[0];
 
-      elAnswer.innerHTML = "";
-      sol.forEach(tok => elAnswer.appendChild(makeToken(tok)));
+    elAnswer.innerHTML = "";
+    elTrash.innerHTML = "";
 
-      updatePreview();
-      elStatus.textContent = "Shown: one correct solution.";
-      elStatus.className = "status";
+    sol.forEach(tok => elAnswer.appendChild(makeToken(tok)));
+
+    updatePreview();
+    elStatus.textContent = "Shown: one correct solution.";
+    elStatus.className = "status";
     }
+
 
     // -------------------------------
     // 5) Render problem + Sortable init
     // -------------------------------
-    let sortable = null;
+    const elTrash = document.getElementById("trash");
+    const elTrashPlaceholder = document.getElementById("trashPlaceholder");
 
-    function renderProblem() {
-      const p = PROBLEMS[currentIndex];
-      clearFeedback();
-
-      elPrompt.textContent = `(${currentIndex + 1}/${PROBLEMS.length}) ${p.prompt}`;
-
-      elAnswer.innerHTML = "";
-      p.tokensStart.forEach(tok => elAnswer.appendChild(makeToken(tok)));
-
-      // scramble once at load so it starts out of order
-      scrambleInPlace();
-
-      // (re)initialize Sortable
-      if (sortable) sortable.destroy();
-      sortable = new Sortable(elAnswer, {
-        animation: 150,
-        ghostClass: "ghost",
-        onSort: updatePreview
-      });
-
-      updatePreview();
+    function updateTrashPlaceholder() {
+        const hasTokens = elTrash.querySelector(".token") !== null;
+        elTrashPlaceholder.style.display = hasTokens ? "none" : "block";
+        elTrash.classList.toggle("empty", !hasTokens);
     }
 
+let sortable = null;
+let trashSortable = null;
+
+function renderProblem() {
+  const p = PROBLEMS[currentIndex];
+  clearFeedback();
+
+  elPrompt.textContent = `(${currentIndex + 1}/${PROBLEMS.length}) ${p.prompt}`;
+
+  // clear both zones
+  elAnswer.innerHTML = "";
+  elTrash.innerHTML = "";
+
+  // re-add placeholder node since innerHTML cleared it:
+  elTrash.appendChild(elTrashPlaceholder);
+  updateTrashPlaceholder()
+
+  // load tokens into ANSWER first
+  p.tokensStart.forEach(tok => elAnswer.appendChild(makeToken(tok)));
+
+  // scramble tokens in ANSWER
+  scrambleInPlace();
+
+  // (re)initialize Sortable on both zones
+  if (sortable) sortable.destroy();
+  if (trashSortable) trashSortable.destroy();
+
+  sortable = new Sortable(elAnswer, {
+    group: "tokens",
+    animation: 150,
+    ghostClass: "ghost",
+    onSort: updatePreview,
+    onAdd: updatePreview,
+    onRemove: updatePreview
+  });
+
+  trashSortable = new Sortable(elTrash, {
+    group: "tokens",
+    animation: 150,
+    ghostClass: "ghost",
+    onSort: updatePreview,
+    onAdd: updatePreview,
+    onRemove: updatePreview
+  });
+
+  updatePreview();
+}
     // -------------------------------
     // 6) Wire buttons
     // -------------------------------
