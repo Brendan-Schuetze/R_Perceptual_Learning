@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Single-box Parsons (Sortable)</title>
+  <link rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+    .prompt { font-size: 16px; margin: 0 0 10px; }
+    .small { color: #555; font-size: 13px; margin: 8px 0 12px; }
+
+    .panel { 
+        border: 1px solid #ddd; 
+        border-radius: 10px; 
+        padding: 12px;
+        max-width: 50%;
+        margin: 0 auto;
+    } 
+    
+    .header {
+        padding: 12px;
+        max-width: 50%;
+        margin: 0 auto;
+    }
+    
+    .sortable {
+      border: 2px dashed #bbb; border-radius: 10px; padding: 10px; min-height: 60px;
+      display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+      background: #fafafa;
+    }
+
+    .token {
+      border: 1px solid #ccc; border-radius: 999px;
+      padding: 6px 10px; cursor: grab; user-select: none;
+      background: white;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 14px;
+    }
+    .token:active { cursor: grabbing; }
+    .ghost { opacity: 0.5; }
+
+    .controls { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    button {
+      border: 1px solid #ccc; background: white; border-radius: 10px;
+      padding: 8px 12px; cursor: pointer;
+    }
+    button:hover { background: #f4f4f4; }
+
+    .status { margin-top: 10px; font-size: 14px; }
+    .ok { color: #0a7a2f; }
+    .bad { color: #b00020; }
+
+    .codeLine code {
+  display: block;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f7f7f7;
+}
+
+.codeLine .fn { color: #8400ff; font-weight: 600; }     /* function name */
+.codeLine .paren { color: #fc0000; font-weight: 700; }  /* parentheses */
+.codeLine .comma { color: #e36209; font-weight: 700; }  /* commas */
+.codeLine .op { color: #004e0c; font-weight: 700; }     /* <-, =, etc */
+.codeLine .num { color: #22863a; }                      /* numbers */
+.codeLine .str { color: #032f62; }                      /* strings */
+.codeLine .kw  { color: #1900ff; }                      /* TRUE/FALSE/NULL */
+.codeLine .id  { color: #24292e; }                      /* identifiers */
+
+    .hint { margin-top: 8px; color: #444; }
+  </style>
+</head>
+<body>
+  <div class="header"><h1>R Perceptual Learning Module</h1></div>
+  <div class="panel">
+
+    <h2 class="prompt" id="prompt"></h2>
+    <p class="small">Drag tokens to reorder them. Goal: form a correct single line of R code.</p>
+    <div class="sortable" id="answer"></div>
+
+    <pre class="codeLine"><code id="assembled" class="language-r hljs">(loading...)</code></pre>
+
+    <div class="controls">
+      <button id="checkBtn">Check</button>
+      <button id="scrambleBtn">Scramble</button>
+      <button id="showBtn">Show Answer</button>
+      <button id="prevBtn">Prev</button>
+      <button id="nextBtn">Next</button>
+    </div>
+
+    <div class="status" id="status"></div>
+    <div class="hint" id="hint"></div>
+  </div>
+
+  <!-- SortableJS (tiny) -->
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+
+  <script>
+    // -------------------------------
+    // 1) EDIT HERE: Add more problems
+    // tokensStart: tokens shown in the box (scrambled)
+    // accepted: one or more correct token sequences
+    // -------------------------------
+    const PROBLEMS = [
+      {
+        id: "mean-na-rm",
+        prompt: "Compute the mean of x while removing missing values (NA).",
+        tokensStart: ["mean","(","x",",", "na.rm","=", "TRUE",")"],
+        accepted: [
+          ["mean","(","x",",","na.rm","=","TRUE",")"]
+        ],
+        hints: {
+          missingParen: "Function calls need parentheses: name( ... ).",
+          commaOutside: "Commas should only appear inside the parentheses in function calls.",
+          nameEquals: "Named args look like: na.rm = TRUE."
+        }
+      },
+        {
+        id: "vec-c-numeric-3",
+        prompt: "Create a numeric vector named my_vec containing 1, 2, and 3.",
+        tokensStart: ["my_vec", "<-", "c", "(", "1", ",","2", ",", "3",")"],
+        accepted: [["my_vec", "<-", "c", "(", "1", ",", "2", ",", "3", ")"]]
+        },
+      {
+        id: "seq-from-to",
+        prompt: "Create a sequence from 1 to 10 using named arguments.",
+        tokensStart: ["seq","(","from","=","1",",","to","=","10",")"],
+        accepted: [
+          ["seq","(","from","=","1",",","to","=","10",")"]
+        ]
+      },
+      {
+        id: "round-digits",
+        prompt: "Round x to 2 digits using a named argument.",
+        tokensStart: ["round","(","x",",","digits","=","2",")"],
+        accepted: [
+          ["round","(","x",",","digits","=","2",")"]
+        ]
+      }
+    ];
+
+    // -------------------------------
+    // 2) DOM + state
+    // -------------------------------
+    let currentIndex = 0;
+
+    const elPrompt = document.getElementById("prompt");
+    const elAnswer = document.getElementById("answer");
+    const elAssembled = document.getElementById("assembled");
+    const elStatus = document.getElementById("status");
+    const elHint = document.getElementById("hint");
+
+    const btnCheck = document.getElementById("checkBtn");
+    const btnScramble = document.getElementById("scrambleBtn");
+    const btnShow = document.getElementById("showBtn");
+    const btnPrev = document.getElementById("prevBtn");
+    const btnNext = document.getElementById("nextBtn");
+
+    function clearFeedback() {
+      elStatus.textContent = "";
+      elStatus.className = "status";
+      elHint.textContent = "";
+    }
+
+    function makeToken(value) {
+      const d = document.createElement("div");
+      d.className = "token";
+      d.textContent = value;
+      d.dataset.value = value;
+      return d;
+    }
+
+    function getTokensFromBox() {
+      return Array.from(elAnswer.querySelectorAll(".token")).map(t => t.dataset.value);
+    }
+
+    // Simple spacing rules to display a nice one-line string
+    function assemble(tokens) {
+      if (tokens.length === 0) return "";
+      let s = "";
+      for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i];
+        const prev = i > 0 ? tokens[i-1] : null;
+
+        const noSpaceBefore = [")", ","];
+        const noSpaceAfter = ["(", ","];
+
+        if (i === 0) s += t;
+        else if (noSpaceBefore.includes(t)) s += t;
+        else if (prev && noSpaceAfter.includes(prev)) s += t;
+        else s += " " + t;
+      }
+      return s;
+    }
+
+    function escapeHtml(str) {
+  return str
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+    function tokenClass(tok, i, tokens) {
+  if (tok === "(" || tok === ")") return "paren";
+  if (tok === ",") return "comma";
+  if (tok === "<-" || tok === "=" || tok === "->") return "op";
+  if (/^"([^"\\]|\\.)*"$/.test(tok) || /^'([^'\\]|\\.)*'$/.test(tok)) return "str";
+  if (/^-?\d+(\.\d+)?$/.test(tok)) return "num";
+  if (tok === "TRUE" || tok === "FALSE" || tok === "NULL") return "kw";
+
+  // "function name" heuristic: identifier immediately followed by "("
+  if (i < tokens.length - 1 && tokens[i + 1] === "(") return "fn";
+
+  return "id";
+}
+
+function renderTokens(tokens) {
+  // spacing rules like before, but inserting spans
+  const noSpaceBefore = new Set([")", ","]);
+  const noSpaceAfter  = new Set(["(", ","]);
+
+  let html = "";
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    const prev = i > 0 ? tokens[i - 1] : null;
+
+    const needsSpace =
+      i > 0 && !noSpaceBefore.has(t) && !(prev && noSpaceAfter.has(prev));
+
+    const cls = tokenClass(t, i, tokens);
+    html += (needsSpace ? " " : "") + `<span class="${cls}">${escapeHtml(t)}</span>`;
+  }
+  return html;
+}
+
+function updatePreview() {
+  const tokens = getTokensFromBox();
+  const codeEl = elAssembled;
+
+  if (tokens.length === 0) {
+    codeEl.innerHTML = `<span class="id">(empty)</span>`;
+  } else {
+    codeEl.innerHTML = renderTokens(tokens);
+  }
+
+  clearFeedback();
+}
+
+
+    // -------------------------------
+    // 3) Grading
+    // -------------------------------
+    function arraysEqual(a, b) {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+      return true;
+    }
+
+    function basicValidate(tokens) {
+      const openCount = tokens.filter(t => t === "(").length;
+      const closeCount = tokens.filter(t => t === ")").length;
+      if (openCount !== closeCount || openCount === 0) return { ok: false, code: "missingParen" };
+
+      let depth = 0;
+      for (const t of tokens) {
+        if (t === "(") depth++;
+        if (t === ")") depth--;
+        if (t === "," && depth <= 0) return { ok: false, code: "commaOutside" };
+      }
+
+      const idx = tokens.indexOf("na.rm");
+      if (idx !== -1 && tokens[idx + 1] !== "=") return { ok: false, code: "nameEquals" };
+
+      return { ok: true, code: null };
+    }
+
+    function checkAnswer() {
+      const problem = PROBLEMS[currentIndex];
+      const attempt = getTokensFromBox();
+
+      const isAccepted = problem.accepted.some(sol => arraysEqual(attempt, sol));
+
+      if (isAccepted) {
+        elStatus.textContent = "✅ Correct!";
+        elStatus.className = "status ok";
+        elHint.textContent = "";
+        return;
+      }
+
+      elStatus.textContent = "❌ Not quite.";
+      elStatus.className = "status bad";
+
+      const v = basicValidate(attempt);
+      if (!v.ok && problem.hints && problem.hints[v.code]) {
+        elHint.textContent = problem.hints[v.code];
+      } else {
+        elHint.textContent = "Try again—watch parentheses, commas, and where named args go.";
+      }
+    }
+
+    // -------------------------------
+    // 4) Utilities: scramble, show solution
+    // -------------------------------
+    function scrambleInPlace() {
+      const items = Array.from(elAnswer.children);
+      // Fisher-Yates
+      for (let i = items.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [items[i], items[j]] = [items[j], items[i]];
+      }
+      elAnswer.innerHTML = "";
+      items.forEach(n => elAnswer.appendChild(n));
+      updatePreview();
+    }
+
+    function showAnswer() {
+      const problem = PROBLEMS[currentIndex];
+      const sol = problem.accepted[0];
+
+      elAnswer.innerHTML = "";
+      sol.forEach(tok => elAnswer.appendChild(makeToken(tok)));
+
+      updatePreview();
+      elStatus.textContent = "Shown: one correct solution.";
+      elStatus.className = "status";
+    }
+
+    // -------------------------------
+    // 5) Render problem + Sortable init
+    // -------------------------------
+    let sortable = null;
+
+    function renderProblem() {
+      const p = PROBLEMS[currentIndex];
+      clearFeedback();
+
+      elPrompt.textContent = `(${currentIndex + 1}/${PROBLEMS.length}) ${p.prompt}`;
+
+      elAnswer.innerHTML = "";
+      p.tokensStart.forEach(tok => elAnswer.appendChild(makeToken(tok)));
+
+      // scramble once at load so it starts out of order
+      scrambleInPlace();
+
+      // (re)initialize Sortable
+      if (sortable) sortable.destroy();
+      sortable = new Sortable(elAnswer, {
+        animation: 150,
+        ghostClass: "ghost",
+        onSort: updatePreview
+      });
+
+      updatePreview();
+    }
+
+    // -------------------------------
+    // 6) Wire buttons
+    // -------------------------------
+    btnCheck.addEventListener("click", checkAnswer);
+    btnScramble.addEventListener("click", scrambleInPlace);
+    btnShow.addEventListener("click", showAnswer);
+
+    btnPrev.addEventListener("click", () => {
+      currentIndex = (currentIndex - 1 + PROBLEMS.length) % PROBLEMS.length;
+      renderProblem();
+    });
+
+    btnNext.addEventListener("click", () => {
+      currentIndex = (currentIndex + 1) % PROBLEMS.length;
+      renderProblem();
+    });
+
+    renderProblem();
+  </script>
+</body>
+</html>
