@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Single-box Parsons (Sortable)</title>
+  <title>Learning R Syntax with Parsons</title>
   <link rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
   <style>
@@ -136,7 +136,7 @@
     const PROBLEMS = [
       {
         id: "mean-na-rm",
-        prompt: "Compute the mean of x while removing missing values (NA).",
+        prompt: "Compute the mean of <i>x</i> while removing missing values (NA).",
         tokensStart: ["mean","(","x",",", "na.rm","=", "TRUE",")"],
         accepted: [
           ["mean","(","x",",","na.rm","=","TRUE",")"]
@@ -149,7 +149,7 @@
       },
         {
         id: "vec-c-numeric-3",
-        prompt: "Create a numeric vector named my_vec containing 1, 2, and 3.",
+        prompt: "Create a numeric vector named <i>my_vec</i> containing 1, 2, and 3.",
         tokensStart: ["my_vec", "<-", "c", "(", "1", ",","2", ",", "3",")"],
         accepted: [["my_vec", "<-", "c", "(", "1", ",", "2", ",", "3", ")"]]
         },
@@ -163,12 +163,53 @@
       },
       {
         id: "round-digits",
-        prompt: "Round x to 2 digits using a named argument.",
+        prompt: "Round <i>x</i> to 2 digits using a named argument.",
         tokensStart: ["round","(","x",",","digits","=","2",")"],
         accepted: [
           ["round","(","x",",","digits","=","2",")"]
         ]
-      }
+      },
+      {
+        id: "cov-x-y",
+        prompt: "Compute the covariance between <i>x</i> and <i>y</i>.",
+        tokensStart: ["cov", "(", "x", ",", "y", ")"],
+        accepted: [
+            ["cov", "(", "x", ",", "y", ")"],
+            ["cov", "(", "y", ",", "x", ")"]
+        ]
+    },
+    {
+        id: "cor-x-y",
+        prompt: "Compute the correlation between <i>x</i> and <i>y</i>.",
+        tokensStart: ["cor", "(", "x", ",", "y", ")","cov","**"],
+        accepted: [
+            ["cor", "(", "x", ",", "y", ")"],
+            ["cor", "(", "y", ",", "x", ")"]
+        ]
+        },
+        {
+        id: "t-test-formula",
+        prompt: "Run a two-sample t test with <i>Math_Score</i> as your outcome and <i>Condition</i> as your grouping variable using the formula interface with data frame <i>df</i>.",
+        tokensStart: ["t.test", "(", "Math_Score", "~", "Condition", ",", "data", "=", "df", ")"],
+        accepted: [
+            ["t.test", "(", "Math_Score", "~", "Condition", ",", "data", "=", "df", ")"],
+            ["t.test", "(","data", "=", "df", ",", "Math_Score", "~", "Condition", ")"]
+        ]
+        },
+        {
+        id: "one-sample-t-test-vector-dollar",
+        prompt: "Run a one-sample t test with the column <i>Depression_Score</i> in the dataframe <i>df</i> as your outcome with a population mean of 2.5.",
+        tokensStart: [
+            "t.test", "(", 
+            "df", "$", "Depression_Score",
+            ",", "mu", "=", "2.5", "sd", "5",
+            ")"
+        ],
+        accepted: [
+            ["t.test","(","df","$","Depression_Score",",","mu","=","2.5",")"]
+        ]
+}
+
     ];
 
     // -------------------------------
@@ -214,12 +255,12 @@
         const t = tokens[i];
         const prev = i > 0 ? tokens[i-1] : null;
 
-        const noSpaceBefore = [")", ","];
-        const noSpaceAfter = ["(", ","];
+        const noSpaceBefore = new Set([")", ",", "$", "]", "]]"]);
+        const noSpaceAfter  = new Set(["(", ",", "$", "[", "[["]);
 
         if (i === 0) s += t;
-        else if (noSpaceBefore.includes(t)) s += t;
-        else if (prev && noSpaceAfter.includes(prev)) s += t;
+        else if (noSpaceBefore.has(t)) s += t;
+        else if (prev && noSpaceAfter.has(prev)) s += t;
         else s += " " + t;
       }
       return s;
@@ -250,8 +291,8 @@
 
 function renderTokens(tokens) {
   // spacing rules like before, but inserting spans
-  const noSpaceBefore = new Set([")", ","]);
-  const noSpaceAfter  = new Set(["(", ","]);
+  const noSpaceBefore = new Set([")", ",", "$", "]", "]]","("]);
+  const noSpaceAfter  = new Set(["(", "$", "[", "[["]);
 
   let html = "";
   for (let i = 0; i < tokens.length; i++) {
@@ -383,8 +424,8 @@ let trashSortable = null;
 function renderProblem() {
   const p = PROBLEMS[currentIndex];
   clearFeedback();
-
-  elPrompt.textContent = `(${currentIndex + 1}/${PROBLEMS.length}) ${p.prompt}`;
+  
+  elPrompt.innerHTML = `(${currentIndex + 1}/${PROBLEMS.length}) ${p.prompt}`;
 
   // clear both zones
   elAnswer.innerHTML = "";
