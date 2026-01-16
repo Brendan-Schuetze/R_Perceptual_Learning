@@ -76,25 +76,27 @@
     }
     button:hover { background: #f4f4f4; }
 
-    .status { margin-top: 10px; font-size: 14px; }
+    .status { margin-top: 10px; font-size: 18px; }
     .ok { color: #0a7a2f; }
     .bad { color: #b00020; }
 
     .codeLine code {
-  display: block;
-  padding: 10px;
-  border-radius: 10px;
-  background: #f7f7f7;
-}
+        display: block;
+        padding: 10px;
+        border-radius: 10px;
+        background: #f7f7f7;
+    }
 
-.codeLine .fn { color: #8400ff; font-weight: 600; }     /* function name */
-.codeLine .paren { color: #fc0000; font-weight: 700; }  /* parentheses */
-.codeLine .comma { color: #e36209; font-weight: 700; }  /* commas */
-.codeLine .op { color: #004e0c; font-weight: 700; }     /* <-, =, etc */
-.codeLine .num { color: #22863a; }                      /* numbers */
-.codeLine .str { color: #032f62; }                      /* strings */
-.codeLine .kw  { color: #1900ff; }                      /* TRUE/FALSE/NULL */
-.codeLine .id  { color: #24292e; }                      /* identifiers */
+
+    /* Syntax highlighting styles */
+    .codeLine .fn { color: #8400ff; font-weight: 600; }     /* function name */
+    .codeLine .paren { color: #fc0000; font-weight: 700; }  /* parentheses */
+    .codeLine .comma { color: #e36209; font-weight: 700; }  /* commas */
+    .codeLine .op { color: #004e0c; font-weight: 700; }     /* <-, =, etc */
+    .codeLine .num { color: #22863a; }                      /* numbers */
+    .codeLine .str { color: #032f62; }                      /* strings */
+    .codeLine .kw  { color: #1900ff; }                      /* TRUE/FALSE/NULL */
+    .codeLine .id  { color: #24292e; }                      /* identifiers */
 
     .hint { margin-top: 8px; color: #444; }
   </style>
@@ -133,7 +135,17 @@
     // tokensStart: tokens shown in the box (scrambled)
     // accepted: one or more correct token sequences
     // -------------------------------
+
     const PROBLEMS = [
+      {
+        id: "exponential",
+        prompt: "Raise <i>x</i> to the third power and save it to <i>x_cubed</i>.",
+        tokensStart: ["x", "^", "3", "**", "x_cubed", "<-"],
+        accepted: [
+          ["x_cubed", "<-", "x", "^", "3"],
+          ["x_cubed", "<-", "x", "**", "3"]
+        ]
+      },
       {
         id: "mean-na-rm",
         prompt: "Compute the mean of <i>x</i> while removing missing values (NA).",
@@ -158,7 +170,8 @@
         prompt: "Create a sequence from 1 to 10 using named arguments.",
         tokensStart: ["seq","(","from","=","1",",","to","=","10",")"],
         accepted: [
-          ["seq","(","from","=","1",",","to","=","10",")"]
+          ["seq","(","from","=","1",",","to","=","10",")"],
+          ["seq","(","to","=","10",",","from","=","1",")"]
         ]
       },
       {
@@ -206,8 +219,12 @@
             ")"
         ],
         accepted: [
-            ["t.test","(","df","$","Depression_Score",",","mu","=","2.5",")"]
-        ]
+            ["t.test","(","df","$","Depression_Score",",","mu","=","2.5",")"],
+            ["t.test","(","mu","=","2.5",",","df","$","Depression_Score",")"]
+        ],
+        hints: {
+            dollarMisuse: "The $ operator should connect a data frame and a column name without spaces.",
+        }
 }
 
     ];
@@ -318,8 +335,7 @@ function updatePreview() {
     codeEl.innerHTML = renderTokens(tokens);
   }
 
-    updateTrashPlaceholder();  // update trash placeholder visibility
-
+  updateTrashPlaceholder();  // update trash placeholder visibility
 
   clearFeedback();
 }
@@ -346,6 +362,22 @@ function updatePreview() {
         if (t === "," && depth <= 0) return { ok: false, code: "commaOutside" };
       }
 
+      // Check if $ is used incorrectly (e.g., "df $ column" instead of "df$column")
+      for (let i = 0; i < tokens.length; i++) {
+        if (tokens[i] === "$") {
+          const prev = tokens[i - 1];
+          const next = tokens[i + 1];
+
+          if (!prev || !next) {
+            return { ok: false, code: "dollarMisuse" };
+          }
+
+          if (!isIdentifier(prev) || !isIdentifier(next)) {
+            return { ok: false, code: "dollarMisuse" };
+          }
+        }
+      }
+
       const idx = tokens.indexOf("na.rm");
       if (idx !== -1 && tokens[idx + 1] !== "=") return { ok: false, code: "nameEquals" };
 
@@ -356,8 +388,10 @@ function updatePreview() {
       const problem = PROBLEMS[currentIndex];
       const attempt = getTokensFromBox();
 
+      // First check if the attempt matches any accepted solution
       const isAccepted = problem.accepted.some(sol => arraysEqual(attempt, sol));
 
+      // If accepted then set status to good
       if (isAccepted) {
         elStatus.textContent = "✅ Correct!";
         elStatus.className = "status ok";
@@ -365,22 +399,39 @@ function updatePreview() {
         return;
       }
 
+      // If not accepted then set status to bad
       elStatus.textContent = "❌ Not quite.";
       elStatus.className = "status bad";
 
+      // Provide hints based on common mistakes
+      const targetLen = problem.accepted[0].length;
+      const answerLen = attempt.length;
       const v = basicValidate(attempt);
       if (!v.ok && problem.hints && problem.hints[v.code]) {
         elHint.textContent = problem.hints[v.code];
+      } else if (answerLen < targetLen) {
+        elHint.textContent = "You have trashed too many tokens. Bring some back from the trash.";
+        return;
+      } else if (answerLen > targetLen) {
+        elHint.textContent = "You have extra tokens in the answer line. Move some to the trash.";
+        return;
       } else {
-        elHint.textContent = "Try again—watch parentheses, commas, and where named args go.";
+        elHint.textContent = "Try again. Check these three things: parentheses, commas, and the location of named arguments.";
       }
     }
 
     // -------------------------------
     // 4) Utilities: scramble, show solution
     // -------------------------------
+
+    let show_problem_index = 0;
+
+    function isIdentifier(tok) {
+      return /^[A-Za-z.][A-Za-z0-9._]*$/.test(tok);
+    }
+
     function scrambleInPlace() {
-      const items = Array.from(elAnswer.children);
+      const items = PROBLEMS[currentIndex].tokensStart.map(makeToken);
       // Fisher-Yates
       for (let i = items.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -392,17 +443,26 @@ function updatePreview() {
     }
 
     function showAnswer() {
-    const problem = PROBLEMS[currentIndex];
-    const sol = problem.accepted[0];
+      const problem = PROBLEMS[currentIndex];
+      if(problem.accepted.length > 0) {
+        sol = problem.accepted[show_problem_index % problem.accepted.length];
+        show_problem_index += 1;
+      } else {
+        sol = problem.accepted[0];
+      }
 
-    elAnswer.innerHTML = "";
-    elTrash.innerHTML = "";
+      elAnswer.innerHTML = "";
+      elTrash.innerHTML = "";
 
-    sol.forEach(tok => elAnswer.appendChild(makeToken(tok)));
+      sol.forEach(tok => elAnswer.appendChild(makeToken(tok)));
 
-    updatePreview();
-    elStatus.textContent = "Shown: one correct solution.";
-    elStatus.className = "status";
+      updatePreview();
+      if(problem.accepted.length > 1) {
+        elStatus.textContent = `Shown: one of ${problem.accepted.length} correct solutions. Hit the show answer button again to see another.`;
+      } else {
+        elStatus.textContent = "Shown: the correct solution.";
+      }
+      elStatus.className = "status";
     }
 
 
@@ -469,7 +529,7 @@ function renderProblem() {
     // 6) Wire buttons
     // -------------------------------
     btnCheck.addEventListener("click", checkAnswer);
-    btnScramble.addEventListener("click", scrambleInPlace);
+    btnScramble.addEventListener("click", renderProblem);
     btnShow.addEventListener("click", showAnswer);
 
     btnPrev.addEventListener("click", () => {
