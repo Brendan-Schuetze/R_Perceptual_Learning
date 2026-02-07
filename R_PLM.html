@@ -12,6 +12,32 @@
     .prompt { font-size: 16px; margin: 0 0 10px; }
     .small { color: #555; font-size: 13px; margin: 8px 0 12px; }
 
+    /* Precode box */
+    .precodeBox{
+      border: 2px solid #1f6feb;   /* GitHub-ish blue */
+      border-radius: 10px;
+      padding: 10px;
+      gap: 8px;
+      background: #f6f8ff;         /* subtle blue tint */
+      margin: 10px 0 12px;
+    }
+
+    .precodeLabel{
+      font-size: 12px;
+      color: #1f6feb;
+      font-weight: 600;
+      margin: 0 0 6px;
+    }
+
+    /* Make highlight.js blend with your rounded box */
+    .precodeBox pre{
+      margin: 0;
+    }
+    .precodeBox code{
+      display: block;
+      border-radius: 8px;
+    }
+
     .panel { 
         border: 1px solid #ddd; 
         border-radius: 10px; 
@@ -37,6 +63,7 @@
         gap: 8px;
         background: #fff6f6;
         justify-content: flex-start; /* tokens align left when present */
+        margin-top: 12px;
 
     }
 
@@ -107,8 +134,8 @@
 
     <h2 class="prompt" id="prompt"></h2>
     <p class="small">Drag tokens to reorder them. Goal: form a correct single line of R code.</p>
+    <div class="language-r hljs" id="precode"></div>
     <div class="sortable" id="answer"></div>
-    <br>
     <div class="trash empty" id="trash">
         <div class="trash-placeholder" id="trashPlaceholder">🗑️ (unneeded tokens go here)</div>
     </div>
@@ -137,9 +164,47 @@
     // -------------------------------
 
     const PROBLEMS = [
+      {id: "pipe-mean",
+        prompt: "Compute the mean of <i>x</i> and then round it to 2 digits using the pipe operator.",
+        precode: "x <- c(1.2345, 2.3456, 3.4567)",
+        tokensStart: ["x", "|>", "mean", "(", ")", "|>", "round", "(", "digits", "=", "2", ")"],
+        accepted: [
+          ["x", "|>", "mean", "(", ")", "|>", "round", "(", "digits", "=", "2", ")"],
+          ["x", "|>", "mean", "(", ")", "|>", "round", "(", "2", ")"],
+          ["mean", "(", "x", ")", "|>", "round", "(", "digits", "=", "2", ")"],
+          ["mean", "(", "x", ")", "|>", "round", "(", "2", ")"]
+        ]
+      },
+      {id:"two_way-ANOVA",
+        prompt: "Run a two-way ANOVA with <i>Math_Score</i> as your outcome and <i>Condition</i> and <i>Gender</i> as your grouping variables using the formula interface with data frame <i>df</i>.",
+        precode: `options(contrasts = c("contr.sum", "contr.poly")) 
+                  my_mod <- lm(Math_Score ~ Condition * Gender, data = df)`,
+        tokensStart: ["car::Anova", "(", "my_mod", ",", "type", "=", "3", ")", "|>"],
+        accepted: [
+          ["my_mod", "|>", "car::Anova", "(", "type", "=", "3", ")"],
+          ["car::Anova", "(", "my_mod", ",", "type", "=", "3", ")"]
+        ]},
+      {id: "one-way-ANOVA",
+        prompt: "Run a one-way ANOVA with <i>Math_Score</i> as your outcome and <i>Condition</i> as your grouping variable using the formula interface with data frame <i>df</i>.",
+        tokensStart: ["aov", "(", "Math_Score", "~", "Condition", ",", "data", "=", "df", ")"],
+        accepted: [
+          ["aov", "(", "Math_Score", "~", "Condition", ",", "data", "=", "df", ")"],
+          ["aov", "(", "data", "=", "df", ",", "Math_Score", "~", "Condition", ")"]
+        ]
+      },
+      {id: "one-way-ANOVA2",
+        prompt: "Run a one-way ANOVA by converting the linear model to an ANOVA object",
+        precode: "reg_mod <- lm(Math_Score ~ Condition, data = df)",
+        tokensStart: ["aov", "(", "reg_mod", ")", "|>"],
+        accepted: [
+          ["reg_mod", "|>", "aov", "(" , ")"],
+          ["aov", "(", "reg_mod", ")"]
+        ]
+      },
       {
         id: "exponential",
         prompt: "Raise <i>x</i> to the third power and save it to <i>x_cubed</i>.",
+        precode: "x <- 2.5",
         tokensStart: ["x", "^", "3", "**", "x_cubed", "<-"],
         accepted: [
           ["x_cubed", "<-", "x", "^", "3"],
@@ -225,96 +290,175 @@
         hints: {
             dollarMisuse: "The $ operator should connect a data frame and a column name without spaces.",
         }
-}
+      }
 
     ];
 
-    // -------------------------------
-    // 2) DOM + state
-    // -------------------------------
-    let currentIndex = 0;
+  // -------------------------------
+  // 2) DOM + state
+  // -------------------------------
+  let currentIndex = 0; // Allows us to toggle between different solutions when there are multiple
 
-    const elPrompt = document.getElementById("prompt");
-    const elAnswer = document.getElementById("answer");
-    const elAssembled = document.getElementById("assembled");
-    const elStatus = document.getElementById("status");
-    const elHint = document.getElementById("hint");
+  const elPrompt = document.getElementById("prompt");
+  const elPrecode = document.getElementById("precode");
+  const elAnswer = document.getElementById("answer");
+  const elAssembled = document.getElementById("assembled");
+  const elStatus = document.getElementById("status");
+  const elHint = document.getElementById("hint");
 
-    const btnCheck = document.getElementById("checkBtn");
-    const btnScramble = document.getElementById("scrambleBtn");
-    const btnShow = document.getElementById("showBtn");
-    const btnPrev = document.getElementById("prevBtn");
-    const btnNext = document.getElementById("nextBtn");
+  const btnCheck = document.getElementById("checkBtn");
+  const btnScramble = document.getElementById("scrambleBtn");
+  const btnShow = document.getElementById("showBtn");
+  const btnPrev = document.getElementById("prevBtn");
+  const btnNext = document.getElementById("nextBtn");
 
-    function clearFeedback() {
-      elStatus.textContent = "";
-      elStatus.className = "status";
-      elHint.textContent = "";
+  function clearFeedback() {
+    elStatus.textContent = "";
+    elStatus.className = "status";
+    elHint.textContent = "";
+  }
+
+  function makeToken(value) {
+    const d = document.createElement("div");
+    d.className = "token";
+    d.textContent = value;
+    d.dataset.value = value;
+    return d;
+  }
+
+  function getTokensFromBox() {
+    return Array.from(elAnswer.querySelectorAll(".token")).map(t => t.dataset.value);
+  }
+
+  // Simple spacing rules to display a nice one-line string
+  function assemble(tokens) {
+    if (tokens.length === 0) return "";
+    let s = "";
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i];
+      const prev = i > 0 ? tokens[i-1] : null;
+
+      const noSpaceBefore = new Set([")", ",", "$", "]", "]]"]);
+      const noSpaceAfter  = new Set(["(", ",", "$", "[", "[["]);
+
+      if (i === 0) s += t;
+      else if (noSpaceBefore.has(t)) s += t;
+      else if (prev && noSpaceAfter.has(prev)) s += t;
+      else s += " " + t;
     }
+    return s;
+  }
 
-    function makeToken(value) {
-      const d = document.createElement("div");
-      d.className = "token";
-      d.textContent = value;
-      d.dataset.value = value;
-      return d;
-    }
+  function escapeHtml(str) {
+    return str
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll("\"", "&quot;")
+      .replaceAll("'", "&#039;");
+  }
 
-    function getTokensFromBox() {
-      return Array.from(elAnswer.querySelectorAll(".token")).map(t => t.dataset.value);
-    }
+  function tokenClass(tok, i, tokens) {
+    if (tok === "(" || tok === ")") return "paren";
+    if (tok === ",") return "comma";
+    if (tok === "<-" || tok === "=" || tok === "->") return "op";
+    if (/^"([^"\\]|\\.)*"$/.test(tok) || /^'([^'\\]|\\.)*'$/.test(tok)) return "str";
+    if (/^-?\d+(\.\d+)?$/.test(tok)) return "num";
+    if (tok === "TRUE" || tok === "FALSE" || tok === "NULL") return "kw";
 
-    // Simple spacing rules to display a nice one-line string
-    function assemble(tokens) {
-      if (tokens.length === 0) return "";
-      let s = "";
-      for (let i = 0; i < tokens.length; i++) {
-        const t = tokens[i];
-        const prev = i > 0 ? tokens[i-1] : null;
+    // "function name" heuristic: identifier immediately followed by "("
+    if (i < tokens.length - 1 && tokens[i + 1] === "(") return "fn";
 
-        const noSpaceBefore = new Set([")", ",", "$", "]", "]]"]);
-        const noSpaceAfter  = new Set(["(", ",", "$", "[", "[["]);
+    return "id";
+  }
 
-        if (i === 0) s += t;
-        else if (noSpaceBefore.has(t)) s += t;
-        else if (prev && noSpaceAfter.has(prev)) s += t;
-        else s += " " + t;
+  function tokenizeR(code) {
+  const tokens = [];
+  let i = 0;
+
+  while (i < code.length) {
+    // Preserve whitespace by skipping it (renderTokens controls spacing)
+    if (/\s/.test(code[i])) { i++; continue; }
+
+    // strings: "..." or '...'
+    if (code[i] === '"' || code[i] === "'") {
+      const quote = code[i];
+      let j = i + 1;
+      while (j < code.length) {
+        if (code[j] === "\\" && j + 1 < code.length) { j += 2; continue; }
+        if (code[j] === quote) { j++; break; }
+        j++;
       }
-      return s;
+      tokens.push(code.slice(i, j));
+      i = j;
+      continue;
     }
 
-    function escapeHtml(str) {
-  return str
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("\"", "&quot;")
-    .replaceAll("'", "&#039;");
+    // multi-char operators / punctuation (longest first)
+    const multi = [
+      "%>%", "<<-", "->>", "<-", "->",
+      "[[", "]]",
+      "==", "!=", "<=", ">=",
+      "&&", "||",
+      "::",
+      "..."
+    ];
+    let matched = null;
+    for (const m of multi) {
+      if (code.startsWith(m, i)) { matched = m; break; }
+    }
+    if (matched) { tokens.push(matched); i += matched.length; continue; }
+
+    // %in% / %foo% operators
+    if (code[i] === "%") {
+      const j = code.indexOf("%", i + 1);
+      if (j !== -1) {
+        tokens.push(code.slice(i, j + 1));
+        i = j + 1;
+        continue;
+      }
+      // lone % falls through
+    }
+
+    // number (simple)
+    const num = code.slice(i).match(/^-?\d+(\.\d+)?/);
+    if (num) { tokens.push(num[0]); i += num[0].length; continue; }
+
+    // identifier
+    const id = code.slice(i).match(/^[A-Za-z.][A-Za-z0-9._]*/);
+    if (id) { tokens.push(id[0]); i += id[0].length; continue; }
+
+    // fallback: single character (prevents dropping parens, etc.)
+    tokens.push(code[i]);
+    i++;
+  }
+
+  return tokens;
 }
 
-    function tokenClass(tok, i, tokens) {
-  if (tok === "(" || tok === ")") return "paren";
-  if (tok === ",") return "comma";
-  if (tok === "<-" || tok === "=" || tok === "->") return "op";
-  if (/^"([^"\\]|\\.)*"$/.test(tok) || /^'([^'\\]|\\.)*'$/.test(tok)) return "str";
-  if (/^-?\d+(\.\d+)?$/.test(tok)) return "num";
-  if (tok === "TRUE" || tok === "FALSE" || tok === "NULL") return "kw";
+function renderTokens(tokensOrLine) {
+  const tokens = Array.isArray(tokensOrLine)
+    ? tokensOrLine
+    : tokenizeR(String(tokensOrLine));
 
-  // "function name" heuristic: identifier immediately followed by "("
-  if (i < tokens.length - 1 && tokens[i + 1] === "(") return "fn";
-
-  return "id";
-}
-
-function renderTokens(tokens) {
   // spacing rules like before, but inserting spans
-  const noSpaceBefore = new Set([")", ",", "$", "]", "]]","("]);
+  const noSpaceBefore = new Set([")", ",", "$", "]", "]]", "("]);
   const noSpaceAfter  = new Set(["(", "$", "[", "[["]);
 
   let html = "";
+  pipe_index = 0;
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     const prev = i > 0 ? tokens[i - 1] : null;
+
+    // special case: pipe forces newline
+    if (t === "|>") {
+      pipe_index++;
+      indent_text = "&nbsp;".repeat(pipe_index * 2); // indent increases with each pipe
+      const cls = tokenClass(t, i, tokens);
+      html += `<span class="${cls}">${escapeHtml(t)}</span><br>${indent_text}`; // indent after pipe
+      continue;
+    }
 
     const needsSpace =
       i > 0 && !noSpaceBefore.has(t) && !(prev && noSpaceAfter.has(prev));
@@ -324,225 +468,243 @@ function renderTokens(tokens) {
   }
   return html;
 }
+  function updatePreview() {
+    const tokens = getTokensFromBox();
+    const codeEl = elAssembled;
 
-function updatePreview() {
-  const tokens = getTokensFromBox();
-  const codeEl = elAssembled;
+    if (tokens.length === 0) {
+      codeEl.innerHTML = `<span class="id">(empty)</span>`;
+    } else {
+      codeEl.innerHTML = renderTokens(tokens);
+    }
 
-  if (tokens.length === 0) {
-    codeEl.innerHTML = `<span class="id">(empty)</span>`;
-  } else {
-    codeEl.innerHTML = renderTokens(tokens);
+    updateTrashPlaceholder();  // update trash placeholder visibility
+
+    clearFeedback();
   }
 
-  updateTrashPlaceholder();  // update trash placeholder visibility
 
-  clearFeedback();
-}
+  // -------------------------------
+  // 3) Grading
+  // -------------------------------
+  function arraysEqual(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
 
+  function basicValidate(tokens) {
+    const openCount = tokens.filter(t => t === "(").length;
+    const closeCount = tokens.filter(t => t === ")").length;
+    if (openCount !== closeCount || openCount === 0) return { ok: false, code: "missingParen" };
 
-    // -------------------------------
-    // 3) Grading
-    // -------------------------------
-    function arraysEqual(a, b) {
-      if (a.length !== b.length) return false;
-      for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-      return true;
+    let depth = 0;
+    for (const t of tokens) {
+      if (t === "(") depth++;
+      if (t === ")") depth--;
+      if (t === "," && depth <= 0) return { ok: false, code: "commaOutside" };
     }
 
-    function basicValidate(tokens) {
-      const openCount = tokens.filter(t => t === "(").length;
-      const closeCount = tokens.filter(t => t === ")").length;
-      if (openCount !== closeCount || openCount === 0) return { ok: false, code: "missingParen" };
+    // Check if $ is used incorrectly (e.g., "df $ column" instead of "df$column")
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i] === "$") {
+        const prev = tokens[i - 1];
+        const next = tokens[i + 1];
 
-      let depth = 0;
-      for (const t of tokens) {
-        if (t === "(") depth++;
-        if (t === ")") depth--;
-        if (t === "," && depth <= 0) return { ok: false, code: "commaOutside" };
-      }
+        if (!prev || !next) {
+          return { ok: false, code: "dollarMisuse" };
+        }
 
-      // Check if $ is used incorrectly (e.g., "df $ column" instead of "df$column")
-      for (let i = 0; i < tokens.length; i++) {
-        if (tokens[i] === "$") {
-          const prev = tokens[i - 1];
-          const next = tokens[i + 1];
-
-          if (!prev || !next) {
-            return { ok: false, code: "dollarMisuse" };
-          }
-
-          if (!isIdentifier(prev) || !isIdentifier(next)) {
-            return { ok: false, code: "dollarMisuse" };
-          }
+        if (!isIdentifier(prev) || !isIdentifier(next)) {
+          return { ok: false, code: "dollarMisuse" };
         }
       }
-
-      const idx = tokens.indexOf("na.rm");
-      if (idx !== -1 && tokens[idx + 1] !== "=") return { ok: false, code: "nameEquals" };
-
-      return { ok: true, code: null };
     }
 
-    function checkAnswer() {
-      const problem = PROBLEMS[currentIndex];
-      const attempt = getTokensFromBox();
+    const idx = tokens.indexOf("na.rm");
+    if (idx !== -1 && tokens[idx + 1] !== "=") return { ok: false, code: "nameEquals" };
 
-      // First check if the attempt matches any accepted solution
-      const isAccepted = problem.accepted.some(sol => arraysEqual(attempt, sol));
+    return { ok: true, code: null };
+  }
 
-      // If accepted then set status to good
-      if (isAccepted) {
-        elStatus.textContent = "✅ Correct!";
-        elStatus.className = "status ok";
-        elHint.textContent = "";
-        return;
-      }
+  function checkAnswer() {
+    const problem = PROBLEMS[currentIndex];
+    const attempt = getTokensFromBox();
 
-      // If not accepted then set status to bad
-      elStatus.textContent = "❌ Not quite.";
-      elStatus.className = "status bad";
+    // First check if the attempt matches any accepted solution
+    const isAccepted = problem.accepted.some(sol => arraysEqual(attempt, sol));
 
-      // Provide hints based on common mistakes
-      const targetLen = problem.accepted[0].length;
-      const answerLen = attempt.length;
-      const v = basicValidate(attempt);
-      if (!v.ok && problem.hints && problem.hints[v.code]) {
-        elHint.textContent = problem.hints[v.code];
-      } else if (answerLen < targetLen) {
-        elHint.textContent = "You have trashed too many tokens. Bring some back from the trash.";
-        return;
-      } else if (answerLen > targetLen) {
-        elHint.textContent = "You have extra tokens in the answer line. Move some to the trash.";
-        return;
-      } else {
-        elHint.textContent = "Try again. Check these three things: parentheses, commas, and the location of named arguments.";
-      }
+    // If accepted then set status to good
+    if (isAccepted) {
+      elStatus.textContent = "✅ Correct!";
+      elStatus.className = "status ok";
+      elHint.textContent = "";
+      return;
     }
 
-    // -------------------------------
-    // 4) Utilities: scramble, show solution
-    // -------------------------------
+    // If not accepted then set status to bad
+    elStatus.textContent = "❌ Not quite.";
+    elStatus.className = "status bad";
 
-    let show_problem_index = 0;
+    // Provide hints based on common mistakes
+    const targetLen = problem.accepted[0].length; // check if there are too many/few tokens
+    const answerLen = attempt.length;
+    const v = basicValidate(attempt);
+    if (!v.ok && problem.hints && problem.hints[v.code]) {
+      elHint.textContent = problem.hints[v.code];
+    } else if (answerLen < targetLen) {
+      elHint.textContent = "You have trashed too many tokens. Bring some back from the trash.";
+      return;
+    } else if (answerLen > targetLen) {
+      elHint.textContent = "You have extra tokens in the answer line. Move some to the trash.";
+      return;
+    } else {
+      elHint.textContent = "Try again. Check these three things: parentheses, commas, and the location of named arguments.";
+    }
+  }
 
-    function isIdentifier(tok) {
-      return /^[A-Za-z.][A-Za-z0-9._]*$/.test(tok);
+  // -------------------------------
+  // 4) Utilities: scramble, show solution
+  // -------------------------------
+
+  let show_problem_index = 0;
+
+  function isIdentifier(tok) {
+    return /^[A-Za-z.][A-Za-z0-9._]*$/.test(tok);
+  }
+
+  function scrambleInPlace() {
+    const items = PROBLEMS[currentIndex].tokensStart.map(makeToken);
+    // Fisher-Yates
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [items[i], items[j]] = [items[j], items[i]];
+    }
+    elAnswer.innerHTML = "";
+    items.forEach(n => elAnswer.appendChild(n));
+    updatePreview();
+  }
+
+  function showAnswer() {
+    const problem = PROBLEMS[currentIndex];
+    if(problem.accepted.length > 0) {
+      sol = problem.accepted[show_problem_index % problem.accepted.length];
+      show_problem_index += 1;
+    } else {
+      sol = problem.accepted[0];
     }
 
-    function scrambleInPlace() {
-      const items = PROBLEMS[currentIndex].tokensStart.map(makeToken);
-      // Fisher-Yates
-      for (let i = items.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [items[i], items[j]] = [items[j], items[i]];
-      }
-      elAnswer.innerHTML = "";
-      items.forEach(n => elAnswer.appendChild(n));
-      updatePreview();
+    elAnswer.innerHTML = "";
+    elTrash.innerHTML = "";
+
+    sol.forEach(tok => elAnswer.appendChild(makeToken(tok)));
+
+    updatePreview();
+    if(problem.accepted.length > 1) {
+      elStatus.textContent = `Shown: one of ${problem.accepted.length} correct solutions. Hit the show answer button again to see another.`;
+    } else {
+      elStatus.textContent = "Shown: the correct solution.";
+    }
+    elStatus.className = "status";
+  }
+
+
+  // -------------------------------
+  // 5) Render problem + Sortable init
+  // -------------------------------
+  const elTrash = document.getElementById("trash");
+  const elTrashPlaceholder = document.getElementById("trashPlaceholder");
+
+  function updateTrashPlaceholder() {
+      const hasTokens = elTrash.querySelector(".token") !== null;
+      elTrashPlaceholder.style.display = hasTokens ? "none" : "block";
+      elTrash.classList.toggle("empty", !hasTokens);
+  }
+
+  let sortable = null;
+  let trashSortable = null;
+
+  function renderProblem() {
+    const p = PROBLEMS[currentIndex];
+    clearFeedback();
+    
+    elPrompt.innerHTML = `(${currentIndex + 1}/${PROBLEMS.length}) ${p.prompt}`;
+    if(p.precode && p.precode !== "") {
+      elPrecode.style.display = "block";
+      const lines = p.precode.split("\n");
+      const rendered = lines.map(line => {
+        const toks = tokenizeR(line);
+        return `<div class="codeLine"><code>${renderTokens(toks)}</code></div>`;
+      }).join("");
+
+    elPrecode.innerHTML = `
+      <div class="precodeBox">
+        <div class="precodeLabel">Previously Executed Code</div>
+        ${rendered}
+      </div>`;
+    } else {
+      elPrecode.innerHTML = "";
+      elPrecode.style.display = "none";
     }
 
-    function showAnswer() {
-      const problem = PROBLEMS[currentIndex];
-      if(problem.accepted.length > 0) {
-        sol = problem.accepted[show_problem_index % problem.accepted.length];
-        show_problem_index += 1;
-      } else {
-        sol = problem.accepted[0];
-      }
+    // clear both zones
+    elAnswer.innerHTML = "";
+    elTrash.innerHTML = "";
 
-      elAnswer.innerHTML = "";
-      elTrash.innerHTML = "";
+    // re-add placeholder node since innerHTML cleared it:
+    elTrash.appendChild(elTrashPlaceholder);
+    updateTrashPlaceholder()
 
-      sol.forEach(tok => elAnswer.appendChild(makeToken(tok)));
+    // load tokens into ANSWER first
+    p.tokensStart.forEach(tok => elAnswer.appendChild(makeToken(tok)));
 
-      updatePreview();
-      if(problem.accepted.length > 1) {
-        elStatus.textContent = `Shown: one of ${problem.accepted.length} correct solutions. Hit the show answer button again to see another.`;
-      } else {
-        elStatus.textContent = "Shown: the correct solution.";
-      }
-      elStatus.className = "status";
-    }
+    // scramble tokens in ANSWER
+    scrambleInPlace();
 
+    // (re)initialize Sortable on both zones
+    if (sortable) sortable.destroy();
+    if (trashSortable) trashSortable.destroy();
 
-    // -------------------------------
-    // 5) Render problem + Sortable init
-    // -------------------------------
-    const elTrash = document.getElementById("trash");
-    const elTrashPlaceholder = document.getElementById("trashPlaceholder");
-
-    function updateTrashPlaceholder() {
-        const hasTokens = elTrash.querySelector(".token") !== null;
-        elTrashPlaceholder.style.display = hasTokens ? "none" : "block";
-        elTrash.classList.toggle("empty", !hasTokens);
-    }
-
-let sortable = null;
-let trashSortable = null;
-
-function renderProblem() {
-  const p = PROBLEMS[currentIndex];
-  clearFeedback();
-  
-  elPrompt.innerHTML = `(${currentIndex + 1}/${PROBLEMS.length}) ${p.prompt}`;
-
-  // clear both zones
-  elAnswer.innerHTML = "";
-  elTrash.innerHTML = "";
-
-  // re-add placeholder node since innerHTML cleared it:
-  elTrash.appendChild(elTrashPlaceholder);
-  updateTrashPlaceholder()
-
-  // load tokens into ANSWER first
-  p.tokensStart.forEach(tok => elAnswer.appendChild(makeToken(tok)));
-
-  // scramble tokens in ANSWER
-  scrambleInPlace();
-
-  // (re)initialize Sortable on both zones
-  if (sortable) sortable.destroy();
-  if (trashSortable) trashSortable.destroy();
-
-  sortable = new Sortable(elAnswer, {
-    group: "tokens",
-    animation: 150,
-    ghostClass: "ghost",
-    onSort: updatePreview,
-    onAdd: updatePreview,
-    onRemove: updatePreview
-  });
-
-  trashSortable = new Sortable(elTrash, {
-    group: "tokens",
-    animation: 150,
-    ghostClass: "ghost",
-    onSort: updatePreview,
-    onAdd: updatePreview,
-    onRemove: updatePreview
-  });
-
-  updatePreview();
-}
-    // -------------------------------
-    // 6) Wire buttons
-    // -------------------------------
-    btnCheck.addEventListener("click", checkAnswer);
-    btnScramble.addEventListener("click", renderProblem);
-    btnShow.addEventListener("click", showAnswer);
-
-    btnPrev.addEventListener("click", () => {
-      currentIndex = (currentIndex - 1 + PROBLEMS.length) % PROBLEMS.length;
-      renderProblem();
+    sortable = new Sortable(elAnswer, {
+      group: "tokens",
+      animation: 150,
+      ghostClass: "ghost",
+      onSort: updatePreview,
+      onAdd: updatePreview,
+      onRemove: updatePreview
     });
 
-    btnNext.addEventListener("click", () => {
-      currentIndex = (currentIndex + 1) % PROBLEMS.length;
-      renderProblem();
+    trashSortable = new Sortable(elTrash, {
+      group: "tokens",
+      animation: 150,
+      ghostClass: "ghost",
+      onSort: updatePreview,
+      onAdd: updatePreview,
+      onRemove: updatePreview
     });
 
+    updatePreview();
+  }
+
+  // -------------------------------
+  // 6) Wire buttons
+  // -------------------------------
+  btnCheck.addEventListener("click", checkAnswer);
+  btnScramble.addEventListener("click", renderProblem);
+  btnShow.addEventListener("click", showAnswer);
+
+  btnPrev.addEventListener("click", () => {
+    currentIndex = (currentIndex - 1 + PROBLEMS.length) % PROBLEMS.length;
     renderProblem();
+  });
+
+  btnNext.addEventListener("click", () => {
+    currentIndex = (currentIndex + 1) % PROBLEMS.length;
+    renderProblem();
+  });
+
+  renderProblem();
+
   </script>
 </body>
 </html>
