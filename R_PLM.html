@@ -164,6 +164,64 @@
     // -------------------------------
 
     const PROBLEMS = [
+      {
+            id: "pipe-sqrt",
+            prompt: "Compute the square root of <i>x</i> using the pipe operator.",
+            precode: "x <- 81",
+            tokensStart: ["x", "|>", "sqrt", "(", ")"],
+            accepted: [
+              ["x", "|>", "sqrt", "(", ")"],
+              ["sqrt", "(", "x", ")"]
+            ]
+          },
+
+          {
+            id: "pipe-length",
+            prompt: "Find the length of <i>x</i> using the pipe operator.",
+            precode: "x <- c(5, 10, 15, 20)",
+            tokensStart: ["x", "|>", "length", "(", ")"],
+            accepted: [
+              ["x", "|>", "length", "(", ")"],
+              ["length", "(", "x", ")"]
+            ]
+          },
+
+          {
+            id: "pipe-sum",
+            prompt: "Compute the sum of <i>x</i> using the pipe operator.",
+            precode: "x <- c(1, 2, 3, 4)",
+            tokensStart: ["x", "|>", "sum", "(", ")"],
+            accepted: [
+              ["x", "|>", "sum", "(", ")"],
+              ["sum", "(", "x", ")"]
+            ]
+          },
+          {
+        id: "pipe-var",
+        prompt: "Compute the variance of <i>x</i> using the pipe operator.",
+        precode: "x <- c(4, 6, 8, 10)",
+        tokensStart: ["x", "|>", "var", "(", ")"],
+        accepted: [
+          ["x", "|>", "var", "(", ")"],
+          ["var", "(", "x", ")"]
+        ]
+      },
+      {
+        id: "pipe-aov-summary",
+        prompt: "Fit a one-way ANOVA and display the ANOVA table using pipes.",
+        precode: 
+      `df <- data.frame(
+        group = c("A","A","B","B"),
+        score = c(80, 85, 70, 75)
+      )`,
+        tokensStart: [
+          "df", "|>", "aov", "(", "score", "~", "group", ")", "|>", "summary", "(", ")"
+        ],
+        accepted: [
+          ["df", "|>", "aov", "(", "score", "~", "group", ")", "|>", "summary", "(", ")"],
+          ["summary", "(", "aov", "(", "score", "~", "group", ",", "df", ")", ")"]
+        ]
+      },
       {id: "pipe-mean",
         prompt: "Compute the mean of <i>x</i> and then round it to 2 digits using the pipe operator.",
         precode: "x <- c(1.2345, 2.3456, 3.4567)",
@@ -456,7 +514,7 @@ function renderTokens(tokensOrLine) {
       pipe_index++;
       indent_text = "&nbsp;".repeat(pipe_index * 2); // indent increases with each pipe
       const cls = tokenClass(t, i, tokens);
-      html += `<span class="${cls}">${escapeHtml(t)}</span><br>${indent_text}`; // indent after pipe
+      html += `&nbsp;<span class="${cls}">${escapeHtml(t)}</span><br>${indent_text}`; // indent after pipe
       continue;
     }
 
