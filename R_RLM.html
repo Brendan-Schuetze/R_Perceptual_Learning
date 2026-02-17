@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>R Rapid Learning Model</title>
+
+    <!-- CSS goes here -->
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #333;
+            padding: 20px;
+            text-align: center;
+            color: rgb(255, 255, 255);
+        }
+
+        h1 {
+            font-size: 50px;
+            /* color: #333; */
+        }
+
+        #hintText {
+            font-size: 40px;
+        }
+
+        #problemText {
+            color: #FFFFFF;
+            font-size: 50px;
+            padding: 30px;
+            font-family: "Fira Code", "Consolas", "Courier New", monospace;
+        }
+
+        .optionButton {
+            background-color: #f4f4f4;
+        }
+
+        button {
+            padding: 50px 75px;
+            font-size: 50px;
+            cursor: pointer;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- HTML goes here -->
+    <h1>Learn R!</h1>
+    <p id="hintText">Is the following code correct?</p>
+    <p id="problemText"> 5 + 5 = 10 </p>
+
+    <button class="optionButton" onclick="verifyAnswer(true)"> Correct </button>
+    <button class="optionButton" onclick="verifyAnswer(false)"> False </button>
+
+    <!-- JavaScript goes here -->
+    <script>
+        var isPlaying = true;
+        var firstTry = true;
+        var winCount = 0;
+
+        var counter = 10;
+
+        var answer = true;
+
+        var answerBank = {
+            // 25 valid R syntax examples
+            "x_cubed <- x^3": true,
+            "my_vector <- c(1,2,3,4)": true,
+            "y <- seq(1,10,by=2)": true,
+            "z <- rep(0,5)": true,
+            "mean_val <- mean(c(1,2,3))": true,
+            "sum_total <- sum(1:10)": true,
+            "is_even <- function(x) x %% 2 == 0": true,
+            "df <- data.frame(a=1:3, b=c('x','y','z'))": true,
+            "colnames(df) <- c('A','B')": true,
+            "list1 <- list(a=1, b=2)": true,
+            "matrix1 <- matrix(1:9, nrow=3)": true,
+            "vec_squared <- x^2": true,
+            "first_elem <- x[1]": true,
+            "x[2:4] <- c(5,6,7)": true,
+            "names(vec) <- c('a','b','c')": true,
+            "y <- rnorm(5)": true,
+            "plot(x, y)": true,
+            "library(ggplot2)": true,
+            "attach(mtcars)": true,
+            "x_sorted <- sort(x)": true,
+            "unique_vals <- unique(c(1,2,2,3))": true,
+            "x_log <- log(x)": true,
+            "x_sqrt <- sqrt(x)": true,
+            "x_len <- length(x)": true,
+            "x_char <- as.character(x)": true,
+
+            // 25 invalid R syntax examples
+            "x_cubed = x^3": false,       // should use <- or proper assignment
+            "my_vector c(1,2,3,4)": false,
+            "y <- seq(1 10 by 2)": false,
+            "z <- rep 0,5)": false,
+            "mean_val <- mean(1,2,3)": false,
+            "sum_total <- sum 1:10)": false,
+            "is_even <- function x x %% 2 == 0": false,
+            "df <- data.frame(a=1:3 b=c('x','y','z'))": false,
+            "colnames df <- c('A','B')": false,
+            "list1 <- list a=1, b=2)": false,
+            "matrix1 <- matrix 1:9 nrow=3)": false,
+            "vec_squared <- x^^2": false,
+            "first_elem <- x[1": false,
+            "x[2:4] <- c(5,6,7": false,
+            "names vec) <- c('a','b','c')": false,
+            "y <- rnorm5)": false,
+            "plot x, y)": false,
+            "library ggplot2)": false,
+            "attach mtcars": false,
+            "x_sorted <- sort x": false,
+            "unique_vals <- unique 1,2,2,3": false,
+            "x_log <- log x": false,
+            "x_sqrt <- sqrt x)": false,
+            "x_len = length(x)": false,
+            "x_char <- as.character x": false
+        };
+
+        function randomizeProblem() {
+            document.getElementById("problemText").style.color = "#FFFFFF";
+            let [k, v] = Object.entries(answerBank)[
+                Math.floor(Math.random() * Object.keys(answerBank).length)];
+            answer = v;
+            updateProblem(k);
+        }
+
+        function updateProblem(problem) {
+            document.getElementById("problemText").textContent = problem;
+        }
+
+
+        function verifyAnswer(response) {
+            if (!isPlaying) {
+                return;
+            }
+            if (answer) {
+                document.getElementById("problemText").style.color = "#00FF00";
+            }
+            else {
+                document.getElementById("problemText").style.color = "#FF0000";              
+            }
+            if (response == answer) {
+                correct();
+            }
+            else {
+                incorrect();
+            }
+            if (counter <= 0) {
+                endTest();
+            }
+        }
+
+        function correct() {
+            if (firstTry) {
+                winCount++;
+            }
+            firstTry = true;
+            counter--;
+            document.getElementById("hintText").textContent = "Good Job!";
+            randomizeProblem();
+        }
+
+        function incorrect() {
+            firstTry = false;
+            document.getElementById("hintText").textContent = "Try again!";
+        }
+
+        function endTest() {
+            isPlaying = false;
+            document.getElementById("hintText").textContent = "You got " + winCount + " correct out of 10";
+            document.getElementById("problemText").textContent = "Thanks for playing!"
+        }
+
+
+    </script>
+
+</body>
+</html>
